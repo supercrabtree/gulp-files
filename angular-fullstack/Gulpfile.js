@@ -40,7 +40,7 @@ function checkAppReady() {
     var options = {
       host: HTTP_HOST,
       port: HTTP_PORT,
-      path: '/api/clients/'
+      path: '/'
     };
     http.get(options, function () {
       process.env.NODE_APP_READY = 'true';
