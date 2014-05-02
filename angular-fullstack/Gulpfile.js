@@ -14,6 +14,7 @@ var gulp      = require('gulp')
   , plumber   = require('gulp-plumber')
   , ngmin     = require('gulp-ngmin')
   , gulpShell = require('gulp-shell')
+  , cp        = require('child_process')
 
   , tinylr    = require('tiny-lr-quiet')
   , fs        = require('fs')
@@ -44,7 +45,7 @@ function onNodeServerRestart(files) {
   waitForNode(reload, [{path: files[0]}]);
 }
 function onNodeServerStart() {
-  console.log('[\x1B[33mnodemon\x1B[0m] waiting for route \x1B[31m' + NODE_APP_READY_TEST_PATH + '\x1B[0m to return successfully');
+  console.log('[' + gutil.colors.yellow('nodemon') + '] waiting for route ' + gutil.colors.cyan(NODE_APP_READY_TEST_PATH) + ' to return successfully');
 }
 function waitForNode(callback, params) {
   setTimeout(function () {
@@ -65,7 +66,7 @@ function errBuild(err) {
   process.exit(1);
 }
 function reload(file) {
-  var log = '[\x1B[31mLiveReload\x1B[0m]';
+  var log = '[' + gutil.colors.blue('LiveReload') + ']';
   if (file) {
     log += ' ' + file.path;
   }
@@ -73,7 +74,10 @@ function reload(file) {
   file = file || {path: 'app/scripts/app.js'};
   lr.changed({body: {files: file.path}});
 }
-
+function spawnProcess(cmd, args, exitCallback) {
+  cp.spawn(cmd, args, {env: process.env, cwd: process.cwd(), stdio:'inherit'})
+    .on('exit', exitCallback || function () {});
+}
 
 
 
@@ -82,7 +86,7 @@ function reload(file) {
 ///////////////////////////////////////////////
 gulp.task('default', ['serve']);
 gulp.task('go', ['serve', 'launchProject']);
-gulp.task('serve', ['gulpfile', 'cleanTmp', 'sass', 'serverJs', 'clientJs', 'runMongo', 'startNode', 'runMongo', 'watch'], function () {
+gulp.task('serve', ['gulpfile', 'cleanTmp', 'sass', 'serverJs', 'clientJs', 'startNode', 'watch'], function () {
   reload(); // TODO: make this work consistantly
 });
 
@@ -125,18 +129,13 @@ gulp.task('clientJs', function () {
 });
 
 
-gulp.task('startNode', ['gulpfile', 'cleanTmp', 'sass', 'clientJs', 'serverJs', 'runMongo'], function (callback) {
+gulp.task('startNode', ['gulpfile', 'cleanTmp', 'sass', 'clientJs', 'serverJs'], function (callback) {
   nodemon('server.js --watch server --watch server.js --ignore node_modules/')
     .on('restart', onNodeServerRestart)
     .on('log', onNodeServerLog)
     .on('start', onNodeServerStart);
 
   waitForNode(callback);
-});
-
-gulp.task('runMongo', function (callback) {
-  $('mongod &');
-  callback();
 });
 
 gulp.task('launchProject', ['startNode'], function () {
@@ -166,23 +165,30 @@ gulp.task('watch', ['sass', 'serverJs', 'clientJs'], function () {
 
 
 
+
 ///////////////////////////////////////////////
 /////////// BUILD /////////////////////////////
 ///////////////////////////////////////////////
 gulp.task('buildBase', ['gulpfile:dist', 'cleanDist', 'sass:build', 'serverJs:dist', 'clientJs:dist', 'bowerComponents', 'heroku', 'favicon', 'images', 'views']);
 gulp.task('build', ['buildBase'], function (callback) {
   console.log(gutil.colors.green('\n✔ Build Success\n'));
-  inquirer.prompt([{type: 'confirm', default:false, name: 'wantsLaunch', message: 'Would you like to run your build?'}], function (answers) {
+  inquirer.prompt([{type: 'confirm', default:false, name: 'wantsRun', message: 'Would you like to run your build?'}], function (answers) {
     console.log();
-    if (answers.wantsLaunch) {
+    if (answers.wantsRun) {
+      process.chdir('./dist');
       process.env.NODE_ENV = 'production';
-      $('npm install');
-      $('node dist/server.js');
-      callback();
-      process.exit(0); // hmmm buggy, shouldn't have to do that
+      cp.spawn('npm', ['install', '--production'], {env: process.env, cwd: process.cwd(), stdio:'inherit'})
+        .on('exit', function (err) {
+          if (err) {
+            console.log(gutil.colors.red('\n✖ npm install --production failed'));
+            process.exit(1);
+          }
+          console.log(gutil.colors.green('\n✔ npm install --production success\n'));
+          cp.spawn('node', ['server.js'], {env: process.env, cwd: process.cwd(), stdio:'inherit'});
+        });
     } else {
       callback();
-      process.exit(0); // hmmm buggy, shouldn't have to do that
+      process.exit(0);
     }
   });
 });
@@ -196,7 +202,7 @@ gulp.task('gulpfile:dist', function () {
 });
 
 gulp.task('cleanDist', function () {
-  return gulp.src(['dist/*', '!dist/.git'], {read: false})
+  return gulp.src(['dist/*', '!dist/.git', '!dist/.gitignore', '!dist/node_modules/**/*.*'], {read: false})
     .pipe(rimraf());
 });
 
@@ -209,7 +215,7 @@ gulp.task('sass:build', ['cleanDist'], function () {
 });
 
 gulp.task('serverJs:dist', ['cleanDist'], function () {
-  return gulp.src(['server.js', 'server/**/*.*'], {base: './'})
+  return gulp.src(['server.js', 'server/**/*.js'], {base: './'})
     .pipe(jshint('.jshintrcnode'))
     .pipe(jshint.reporter('jshint-stylish'))
     .pipe(jshint.reporter('fail'))
@@ -261,8 +267,9 @@ gulp.task('views', ['cleanDist'], function () {
 gulp.task('deploy', ['buildBase'], function (callback) {
   console.log(gutil.colors.green('\n✔ Build Success\n'));
 
-  var lastCommitHash = $('git log -1 --pretty=%h');
-  var lastCommitMessage = $('git log -1 --pretty=%B');
+  var lastCommitHash = $('command git log -1 --pretty=%h');
+  var lastCommitMessage = $('command git log -1 --pretty=%B');
+
 
   var defaultCommit = '';
   lastCommitHash && ( defaultCommit += lastCommitHash.match(/[^$\n+]+/)[0] + ' ');
@@ -277,18 +284,18 @@ gulp.task('deploy', ['buildBase'], function (callback) {
 
       process.chdir('./dist');
 
-      var commands = [
-        'git add -A .',
-        'git commit -m "' + answers.commitMessage + '"',
-        'git push heroku master'
-      ];
-      answers.wantsLogs && commands.push('heroku logs -t');
-      gulp.src('')
-        .pipe(gulpShell(commands))
-        .on('error', function (err) {
-          //console.log(err.stack);
-          process.exit(1);
+      spawnProcess('git', ['add', '-A', '.'], function () {
+        spawnProcess('git', ['commit', '-m', answers.commitMessage], function () {
+          spawnProcess('git', ['push', 'heroku', 'master'], function () {
+            if (answers.wantsLogs) {
+              spawnProcess('heroku', ['logs', '-t']);
+            } else {
+              process.exit(0);
+            }
+          });
         });
+      });
+
       console.log();
       callback();
   });
