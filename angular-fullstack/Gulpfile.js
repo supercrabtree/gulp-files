@@ -1,9 +1,10 @@
 'use strict';
 
+// npm install -D gulp gulp-util gulp-rimraf gulp-ruby-sass gulp-jshint gulp-autoprefixer gulp-plumber gulp-ngmin gulp-shell tiny-lr-quiet nodemon http open inquirer
+
 /*global shell */
 /*global $ */
 require('shellscript').globalize();
-
 
 var gulp      = require('gulp')
   , gutil     = require('gulp-util')
@@ -14,14 +15,15 @@ var gulp      = require('gulp')
   , plumber   = require('gulp-plumber')
   , ngmin     = require('gulp-ngmin')
   , gulpShell = require('gulp-shell')
-  , cp        = require('child_process')
 
   , tinylr    = require('tiny-lr-quiet')
-  , fs        = require('fs')
   , nodemon   = require('nodemon')
   , http      = require('http')
   , openURL   = require('open')
-  , inquirer  = require('inquirer');
+  , inquirer  = require('inquirer')
+
+  , fs        = require('fs')
+  , cp        = require('child_process');
 
 var HTTP_HOST = 'localhost';
 var HTTP_PORT = process.env.PORT = 9000;
