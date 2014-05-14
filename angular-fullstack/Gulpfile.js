@@ -15,6 +15,7 @@ var gulp      = require('gulp')
   , plumber   = require('gulp-plumber')
   , ngmin     = require('gulp-ngmin')
   , gulpShell = require('gulp-shell')
+  , gulpLR    = require('gulp-livereload')
 
   , tinylr    = require('tiny-lr-quiet')
   , nodemon   = require('nodemon')
@@ -88,7 +89,7 @@ function spawnProcess(cmd, args, exitCallback) {
 ///////////////////////////////////////////////
 gulp.task('default', ['serve']);
 gulp.task('go', ['serve', 'launchProject']);
-gulp.task('serve', ['gulpfile', 'cleanTmp', 'sass', 'serverJs', 'clientJs', 'startNode', 'watch'], function () {
+gulp.task('serve', ['gulpfile', 'wiredep', 'cleanTmp', 'sass', 'serverJs', 'clientJs', 'startNode', 'watch'], function () {
   reload(); // TODO: make this work consistantly
 });
 
@@ -111,7 +112,11 @@ gulp.task('sass', ['cleanTmp'], function () {
     .pipe(sass({loadPath: ['app/bower_components']}))
     .on('error', err)
     .pipe(prefix('last 2 versions'))
-    .pipe(gulp.dest('.tmp/styles'));
+    .pipe(gulp.dest('.tmp/styles'))
+    .pipe(gulpLR(lr))
+    .on('end', function () {
+      console.log('[' + gutil.colors.blue('LiveReload') + '] app/styles/main.scss');
+    });
 });
 
 gulp.task('serverJs', function () {
@@ -132,7 +137,7 @@ gulp.task('clientJs', function () {
 
 
 gulp.task('startNode', ['gulpfile', 'cleanTmp', 'sass', 'clientJs', 'serverJs'], function (callback) {
-  nodemon('server.js --watch server --watch server.js --ignore node_modules/')
+  nodemon('--debug server.js --watch server --watch server.js --ignore node_modules/')
     .on('restart', onNodeServerRestart)
     .on('log', onNodeServerLog)
     .on('start', onNodeServerStart);
@@ -144,18 +149,35 @@ gulp.task('launchProject', ['startNode'], function () {
   openURL('http://' + HTTP_HOST + ':' + HTTP_PORT);
 });
 
+gulp.task('wiredep', function () {
+  var wiredep = require('wiredep').stream;
+
+  gulp.src('app/styles/*.scss')
+    .pipe(wiredep({
+      directory: 'app/bower_components'
+    }))
+  .pipe(gulp.dest('app/styles'));
+
+  gulp.src('app/views/index.html')
+    .pipe(wiredep({
+      directory: 'app/bower_components',
+      exclude: ['bootstrap-sass-official']
+    }))
+    .pipe(gulp.dest('app/views'));
+});
+
 gulp.task('watch', ['sass', 'serverJs', 'clientJs'], function () {
 
   gulp.watch([
     'app/views/**/*.html',
     'app/scripts/**/*.js',
-    'app/images/**/*.*',
-    '.tmp/styles/**/*.css'
+    'app/images/**/*.*'
   ], reload);
 
   gulp.watch('app/styles/**/*.scss', ['sass']);
   gulp.watch('app/scripts/**/*.js', ['clientJs']);
   gulp.watch(['server/**/*.js', 'server.js'], ['serverJs']);
+  gulp.watch('bower.json', ['wiredep', 'sass']);
 
   gulp.watch('Gulpfile.js', function (event, err) {
     gutil.beep();
@@ -171,7 +193,7 @@ gulp.task('watch', ['sass', 'serverJs', 'clientJs'], function () {
 ///////////////////////////////////////////////
 /////////// BUILD /////////////////////////////
 ///////////////////////////////////////////////
-gulp.task('buildBase', ['gulpfile:dist', 'cleanDist', 'sass:build', 'serverJs:dist', 'clientJs:dist', 'bowerComponents', 'heroku', 'favicon', 'images', 'views']);
+gulp.task('buildBase', ['gulpfile:dist', 'cleanDist', 'sass:build', 'serverJs:dist', 'clientJs:dist', 'bowerComponents', 'heroku', 'favicon', 'images', 'views', 'testfiles']);
 gulp.task('build', ['buildBase'], function (callback) {
   console.log(gutil.colors.green('\n✔ Build Success\n'));
   inquirer.prompt([{type: 'confirm', default:false, name: 'wantsRun', message: 'Would you like to run your build?'}], function (answers) {
@@ -259,6 +281,12 @@ gulp.task('views', ['cleanDist'], function () {
   return gulp.src('app/views/**/*.html')
     .pipe(gulp.dest('dist/views'));
 });
+
+gulp.task('testfiles', ['cleanDist'], function () {
+  return gulp.src('server/files-tmp/**/*.*')
+    .pipe(gulp.dest('dist/server/files-tmp'));
+});
+
 
 
 
